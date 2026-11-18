@@ -204,8 +204,8 @@ Item {
         // Keep the old icon while a new source or size decodes, instead of a
         // blank frame (Qt 6.8+).
         retainWhileLoading: true
-        sourceSize.width: width * Screen.devicePixelRatio
-        sourceSize.height: height * Screen.devicePixelRatio
+        sourceSize.width: Math.max(1, Math.round(width * Screen.devicePixelRatio))
+        sourceSize.height: Math.max(1, Math.round(height * Screen.devicePixelRatio))
         source: !wanted ? "" : (row.appLibrary ? row.appLibrary.iconSource(row.iconName) : Quickshell.iconPath(row.iconName, "application-x-executable"))
       }
 

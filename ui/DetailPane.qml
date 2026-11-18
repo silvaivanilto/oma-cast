@@ -10,6 +10,7 @@ Item {
   property var detail: null
   property var look: null
   property real zoom: 1
+  property string infoTitle: "Information"
 
   function px(v) { return Math.round(Style.space(v) * pane.zoom) }
 
@@ -113,7 +114,7 @@ Item {
 
     Text {
       textFormat: Text.PlainText
-      text: "Information"
+      text: pane.infoTitle
       color: pane.look.foreground
       opacity: 0.7
       font.family: pane.look.fontFamily

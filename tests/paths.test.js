@@ -39,13 +39,3 @@ test("startup creates the persistent dirs and the runtime dir", () => {
     "/h/.local/state/omacast/logs", "/h/.local/state/omacast/backups", "/r/omacast"
   ])
 })
-
-test("directories under the old oma-cast name move to omacast", () => {
-  const p = Paths.resolve(envOf({ HOME: "/h", XDG_CONFIG_HOME: "/cfg" }))
-  assert.deepEqual(Paths.legacyMoves(p), [
-    ["/cfg/oma-cast", "/cfg/omacast"],
-    ["/h/.local/share/oma-cast", "/h/.local/share/omacast"],
-    ["/h/.cache/oma-cast", "/h/.cache/omacast"],
-    ["/h/.local/state/oma-cast", "/h/.local/state/omacast"]
-  ])
-})

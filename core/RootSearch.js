@@ -254,7 +254,8 @@ function calculatorCandidate(calc) {
   return {
     id: CALCULATOR_ID, type: "command", kind: "calculator",
     title: calc.result, subtitle: calc.input, typeLabel: "Calculator",
-    calcKind: calc.kind, calcInput: calc.input, calcResult: calc.result,
+    calcKind: calc.kind, calcValue: typeof calc.value === "number" ? calc.value : null,
+    calcInput: calc.input, calcResult: calc.result,
     calcInputCaption: calc.inputCaption || "", calcResultCaption: calc.resultCaption || "",
     rootSearch: { when: "searching" }
   }

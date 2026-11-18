@@ -72,12 +72,12 @@ Press **Alt+Space**. Super+Space stays the Omarchy menu.
 this to your Hyprland config:
 
 ```lua
-o.bind("ALT + SPACE", "omacast launcher", hl.dsp.global("omacast:toggle"), { submap_universal = true })
+o.rebind("ALT + SPACE", "omacast launcher", hl.dsp.global("omacast:toggle"), { submap_universal = true })
 -- While omacast is open it switches Hyprland to this submap, so Super+J/K reach the launcher.
 hl.define_submap("omacast", function()
   hl.bind("SUPER + F24", hl.dsp.no_op()) -- a submap needs one bind to exist
 end)
--- Blur behind the launcher under Glassy Windows.
+-- Blur behind the launcher and its translucent outer scrim.
 hl.layer_rule({ match = { namespace = "^omacast$" }, blur = true, ignore_alpha = 0.3 })
 ```
 
@@ -328,13 +328,6 @@ from the process list. Paste sends Ctrl+Shift+V to terminals (Alacritty, Kitty, 
 Konsole, GNOME Terminal, Ptyxis, Herdr) and Shift+Insert everywhere else, as Omarchy's clipboard history does.
 The one exception is a script command's arguments: they reach your script as `$1`…`$3`, so they are on its
 command line while it runs.
-
-### Upgrading from oma-cast
-
-The plugin used to be `typecraft.oma-cast`. On first start, omacast moves your `oma-cast` config, data,
-cache and state directories to the `omacast` names. In a development checkout, `bin/omacast install` removes
-the old plugin link and `~/.local/bin/oma-cast`, and `omacast setup hyprland` moves `oma-cast.lua` to
-`omacast.lua`, keeping your key. `omacast doctor` reports anything left over.
 
 ## Roadmap
 

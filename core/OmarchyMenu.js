@@ -52,6 +52,34 @@ function parse(raw) {
   return { items: items, error: "" }
 }
 
+function applyTranslations(items, catalog) {
+  var source = Array.isArray(items) ? items : []
+  var strings = (catalog && typeof catalog === "object") ? catalog : ({})
+  var out = []
+  for (var i = 0; i < source.length; i++) {
+    var entry = source[i]
+    var translated = entry && strings[entry.id]
+    if (!translated || typeof translated !== "object") {
+      out.push(entry)
+      continue
+    }
+    var next = {}
+    for (var k in entry) next[k] = entry[k]
+    if (translated.label) {
+      if (translated.label !== entry.label && entry.label) {
+        var aliases = Array.isArray(entry.aliases) ? entry.aliases.slice() : []
+        if (aliases.indexOf(entry.label) < 0) aliases.push(entry.label)
+        next.aliases = aliases
+      }
+      next.label = String(translated.label)
+    }
+    if (translated.title) next.title = String(translated.title)
+    if (translated.description) next.description = String(translated.description)
+    out.push(next)
+  }
+  return out
+}
+
 function buildTree(defaultItems, userItems) {
   var byId = {}
   var order = []
@@ -101,10 +129,6 @@ function breadcrumb(tree, id) {
     parent = tree.items[parent].parent
   }
   return labels
-}
-
-function depth(tree, id) {
-  return breadcrumb(tree, id).length
 }
 
 function isVisible(tree, guards, id) {
@@ -213,9 +237,9 @@ if (typeof module !== "undefined") {
   module.exports = {
     stripJsonc: stripJsonc,
     parse: parse,
+    applyTranslations: applyTranslations,
     buildTree: buildTree,
     breadcrumb: breadcrumb,
-    depth: depth,
     isVisible: isVisible,
     guardScript: guardScript,
     parseGuardOutput: parseGuardOutput,

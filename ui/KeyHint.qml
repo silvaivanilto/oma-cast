@@ -30,7 +30,7 @@ Row {
         color: hint.color
         opacity: 0.75
         font.family: hint.fontFamily
-        font.pixelSize: hint.pixelSize
+        font.pixelSize: Math.round(hint.pixelSize * hint.zoom)
       }
     }
   }

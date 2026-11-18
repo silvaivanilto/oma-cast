@@ -66,38 +66,24 @@ test("readable histories from older builds are repaired; stricter modes are kept
   assert.equal(fs.readFileSync(db + "/frecency.json", "utf8"), "{}", "repair never rewrites contents")
 })
 
-test("legacy oma-cast data moves and comes out private", (t) => {
-  const home = tempHome(t)
-  const old = home + "/.local/share/oma-cast/db"
-  fs.mkdirSync(old, { recursive: true })
-  fs.chmodSync(home + "/.local/share/oma-cast", 0o755)
-  fs.writeFileSync(old + "/calculator.json", '{"history":[]}', { mode: 0o644 })
-  fs.chmodSync(old + "/calculator.json", 0o644)
-  const p = runSetup(home)
-  assert.ok(!fs.existsSync(home + "/.local/share/oma-cast"))
-  assert.equal(mode(p.data), 0o700)
-  assert.equal(mode(p.db + "/calculator.json"), 0o600)
-})
-
-test("setup hyprland keeps a private legacy oma-cast.lua private", (t) => {
+test("setup hyprland binds Alt+Space and appends require once", (t) => {
   const home = tempHome(t)
   const hypr = home + "/.config/hypr"
   const bin = home + "/bin"
   fs.mkdirSync(hypr, { recursive: true })
   fs.mkdirSync(bin)
   fs.mkdirSync(home + "/omarchy")
-  fs.writeFileSync(hypr + "/hyprland.lua", 'require("hypr.oma-cast")\n')
-  fs.writeFileSync(hypr + "/oma-cast.lua", 'o.bind("ALT + SPACE", "oma-cast launcher", hl.dsp.global("oma-cast:toggle"))\n-- token = "private"\n')
-  fs.chmodSync(hypr + "/oma-cast.lua", 0o600)
+  fs.writeFileSync(hypr + "/hyprland.lua", '-- base\n')
   fs.writeFileSync(bin + "/hyprctl", "#!/bin/bash\nexit 0\n", { mode: 0o755 })
   const r = spawnSync("bash", ["-c", 'umask 022; exec "$@"', "umask-022", path.join(root, "bin/omacast"), "setup", "hyprland", "--yes"], {
     env: { HOME: home, XDG_CONFIG_HOME: home + "/.config", OMARCHY_PATH: home + "/omarchy", PATH: bin + ":" + process.env.PATH },
     encoding: "utf8"
   })
   assert.equal(r.status, 0, r.stdout + r.stderr)
-  assert.ok(!fs.existsSync(hypr + "/oma-cast.lua"))
-  assert.equal(mode(hypr + "/omacast.lua"), 0o600)
-  assert.match(fs.readFileSync(hypr + "/omacast.lua", "utf8"), /omacast:toggle/)
+  const lua = fs.readFileSync(hypr + "/omacast.lua", "utf8")
+  assert.match(lua, /o\.rebind\("ALT \+ SPACE"/)
+  assert.match(lua, /omacast:toggle/)
+  assert.match(fs.readFileSync(hypr + "/hyprland.lua", "utf8"), /require\("hypr\.omacast"\)/)
 })
 
 // The clipboard scripts run with the text on stdin. A fake wl-copy/wtype on

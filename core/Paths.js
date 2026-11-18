@@ -1,7 +1,5 @@
 
 var APP = "omacast"
-// The name before 2026-11-01. Its directories move to APP on first start. [D]
-var LEGACY_APP = "oma-cast"
 
 function xdg(env, name, homeFallback) {
   var value = String(env(name) || "")
@@ -39,14 +37,6 @@ function resolve(env) {
   }
 }
 
-// [from, to] pairs for the base directories still under LEGACY_APP.
-function legacyMoves(paths) {
-  var suffix = "/" + APP
-  return [paths.config, paths.data, paths.cache, paths.state].map(function(dir) {
-    return [dir.slice(0, -suffix.length) + "/" + LEGACY_APP, dir]
-  })
-}
-
 function directoriesToCreate(paths) {
   return [paths.config, paths.db, paths.clipboard, paths.cache, paths.logs, paths.backups, paths.runtime]
 }
@@ -64,12 +54,11 @@ function privateTrees(paths) {
   return [paths.config, paths.data, paths.state]
 }
 
-// argv after the script name: legacy [from, to] pairs, --, dirs to create, --,
-// private roots, --, private trees, --, files to create. chmod go-rwx only
-// ever removes access, so a stricter existing mode stays as it is.
+// argv after the script name: dirs to create, --, private roots, --,
+// private trees, --, files to create. chmod go-rwx only ever removes
+// access, so a stricter existing mode stays as it is.
 var SETUP_SCRIPT = [
   'umask 077',
-  'while [[ $1 != -- ]]; do [[ -d $1 && ! -e $2 ]] && mv -T -- "$1" "$2"; shift 2; done; shift',
   'dirs=(); while [[ $1 != -- ]]; do dirs+=("$1"); shift; done; shift',
   'roots=(); while [[ $1 != -- ]]; do roots+=("$1"); shift; done; shift',
   'trees=(); while [[ $1 != -- ]]; do trees+=("$1"); shift; done; shift',
@@ -83,13 +72,12 @@ var SETUP_SCRIPT = [
 
 function setupArgv(paths, files) {
   return ["bash", "-c", SETUP_SCRIPT, "omacast-setup"]
-    .concat([].concat.apply([], legacyMoves(paths)), ["--"], directoriesToCreate(paths), ["--"],
-      privateRoots(paths), ["--"], privateTrees(paths), ["--"], files)
+    .concat(directoriesToCreate(paths), ["--"], privateRoots(paths), ["--"], privateTrees(paths), ["--"], files)
 }
 
 if (typeof module !== "undefined") {
   module.exports = {
-    APP: APP, LEGACY_APP: LEGACY_APP, resolve: resolve, legacyMoves: legacyMoves, directoriesToCreate: directoriesToCreate,
+    APP: APP, resolve: resolve, directoriesToCreate: directoriesToCreate,
     privateRoots: privateRoots, privateTrees: privateTrees, SETUP_SCRIPT: SETUP_SCRIPT, setupArgv: setupArgv
   }
 }

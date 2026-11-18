@@ -9,6 +9,8 @@ Rectangle {
   property var spec: null
   property var look: null
   property real zoom: 1
+  property string cancelText: "Cancel"
+  property string okText: "OK"
 
   signal confirmed()
   signal cancelled()
@@ -74,8 +76,8 @@ Rectangle {
 
         Repeater {
           model: [
-            { primary: false, title: "Cancel", key: "Esc" },
-            { primary: true, title: alert.spec ? alert.spec.primary : "OK", key: "↵" }
+            { primary: false, title: alert.cancelText, key: "Esc" },
+            { primary: true, title: alert.spec ? alert.spec.primary : alert.okText, key: "↵" }
           ]
 
           Rectangle {

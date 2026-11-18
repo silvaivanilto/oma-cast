@@ -7,11 +7,13 @@ Item {
   id: source
 
   property string omarchyPath: Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy"
+  property string language: "en"
   readonly property string defaultPath: source.omarchyPath + "/default/omarchy/omarchy-menu.jsonc"
   readonly property string userPath: Quickshell.env("HOME") + "/.config/omarchy/extensions/omarchy-menu.jsonc"
 
   property var defaultItems: []
   property var userItems: []
+  property var menuCatalog: ({})
   property var tree: OmarchyMenu.buildTree([], [])
   property var guards: ({ when: {}, checked: {}, disabled: {} })
   property var providerItems: ({})
@@ -98,11 +100,14 @@ Item {
     source.revision++
   }
 
-  function rebuild() {
-    source.tree = OmarchyMenu.buildTree(source.defaultItems, source.userItems)
+  function rebuild(skipGuards) {
+    var translatedDefaults = OmarchyMenu.applyTranslations(source.defaultItems, source.menuCatalog)
+    source.tree = OmarchyMenu.buildTree(translatedDefaults, source.userItems)
     source.revision++
-    source.refresh()
+    if (!skipGuards) source.refresh()
   }
+
+  onLanguageChanged: if (source.language === "en") { source.menuCatalog = ({}); source.rebuild(true) }
 
   function refresh() {
     if (!guardProc.running) {
@@ -202,5 +207,23 @@ Item {
     onFileChanged: reload()
     onLoaded: source.load("user", text())
     onLoadFailed: source.load("user", "")
+  }
+
+  FileView {
+    id: menuCatalogFile
+    path: source.language && source.language !== "en" ? source.omarchyPath + "/default/i18n/" + source.language + "/menu.json" : ""
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: {
+      try {
+        var parsed = JSON.parse(text() || "{}")
+        source.menuCatalog = (parsed && typeof parsed === "object" && !Array.isArray(parsed)) ? parsed : ({})
+      } catch (e) {
+        source.menuCatalog = ({})
+      }
+      source.rebuild(true)
+    }
+    onLoadFailed: { source.menuCatalog = ({}); source.rebuild(true) }
   }
 }

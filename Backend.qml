@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
+import qs.Commons as Commons
 import "core/Rpc.js" as Rpc
 import "core/Paths.js" as Paths
 import "core/Log.js" as Log
@@ -17,6 +18,7 @@ import "core/ClipboardHistory.js" as ClipboardHistory
 import "core/Themes.js" as Themes
 import "core/Emoji.js" as Emoji
 import "core/ScriptCommands.js" as ScriptCommands
+import "core/Localize.js" as Localize
 import "services"
 
 Item {
@@ -37,13 +39,32 @@ Item {
   readonly property double startedAt: Date.now()
   readonly property var deps: ({ Ranker: Ranker, Frecency: Frecency, OmarchyMenu: OmarchyMenu })
 
+  Commons.Translations {
+    id: strings
+    directory: Qt.resolvedUrl("i18n")
+    onStringsChanged: {
+      backend.languageRevision++
+      if (backend.directoriesReady) rebuildTimer.restart()
+    }
+  }
+  readonly property alias i18n: strings
+  property int languageRevision: 0
+
+  function t(key, fallback, args) {
+    return Localize.format(strings.t(key, fallback), args)
+  }
+
+  function tn(key, count, fallback, args) {
+    return Localize.format(strings.tn(key, count, fallback), args)
+  }
+
   property var candidates: []
   property var candidatesById: ({})
   property int candidatesRevision: 0
   readonly property bool loading: menuSource.loading || themeSource.loading || nativeSearch.pending !== null || emojiSearch.pending !== null
   // Bumped when exchange rates or zone offsets arrive, so an open
-  // calculator row re-evaluates.
-  readonly property int calculatorRevision: (calculatorData.rates ? 1 : 0) + calculatorData.ratesFetchedAt + calculatorData.zonesAt
+  // calculator row re-evaluates. (double avoids 32-bit int overflow of Date.now())
+  readonly property double calculatorRevision: (calculatorData.rates ? 1 : 0) + calculatorData.ratesFetchedAt + calculatorData.zonesAt
 
   signal notification(string method, var data)
 
@@ -119,6 +140,7 @@ Item {
     RootSearch.BUILTINS.forEach(function(d) { (d.supersedes || []).forEach(function(id) { superseded[id] = true }) })
     next = next.filter(function(c) { return !superseded[c.id] })
     for (var s = 0; s < scriptSource.commands.length; s++) next.push(ScriptCommands.candidate(scriptSource.commands[s]))
+    next = next.map(function(c) { return Localize.candidate(c, backend.t, backend.tn, strings.language) })
     var byId = ({})
     for (var j = 0; j < next.length; j++) byId[next[j].id] = next[j]
     var entries = FleaSearch.entries(next, Ranker.transliterate)
@@ -152,9 +174,9 @@ Item {
 
   // ------------------------------------------------------------ calculator
 
-  // 12- or 24-hour clock from config.json clockFormat, else the Qt locale.
+  // 12- or 24-hour clock from config.json clockFormat, else the active Omarchy locale.
   readonly property bool hour12: backend.config.clockFormat === "auto"
-    ? Qt.locale().timeFormat(Locale.ShortFormat).toLowerCase().indexOf("ap") >= 0
+    ? Qt.locale(Commons.I18n.formatLocale).timeFormat(Locale.ShortFormat).toLowerCase().indexOf("ap") >= 0
     : backend.config.clockFormat === "12h"
 
   function calculatorEnv() {
@@ -195,7 +217,7 @@ Item {
       case "copy-answer":
         if (!historyId) backend.saveCalculation(entry)
         clipboard.copy(entry.copy)
-        return { close: true, hud: "Copied to Clipboard" }
+        return { close: true, hud: backend.t("toast.copiedToClipboard", "Copied to Clipboard") }
       case "paste-answer":
         if (!historyId) backend.saveCalculation(entry)
         // Copies, waits for our window to unmap, then pastes.
@@ -204,17 +226,17 @@ Item {
       case "copy-question-answer":
         if (!historyId) backend.saveCalculation(entry)
         clipboard.copy(entry.query + " = " + entry.result)
-        return { close: true, hud: "Copied to Clipboard" }
+        return { close: true, hud: backend.t("toast.copiedToClipboard", "Copied to Clipboard") }
       case "open-history":
-        return { push: { kind: "calculator-history", title: "Calculator History" } }
+        return { push: { kind: "calculator-history", title: backend.t("builtin.calculatorHistory.title", "Calculator History") } }
       case "delete-entry":
         calculatorStore.update(function(doc) { doc.history = doc.history.filter(function(h) { return h.id !== historyId }) })
         backend.emit("calculator.historyStateChanged", null)
-        return { toast: { style: "success", title: "Entry deleted" } }
+        return { toast: { style: "success", title: backend.t("toast.entryDeleted", "Entry deleted") } }
       case "delete-all-entries":
         calculatorStore.update(function(doc) { doc.history = [] })
         backend.emit("calculator.historyStateChanged", null)
-        return { toast: { style: "success", title: "History cleared" } }
+        return { toast: { style: "success", title: backend.t("toast.historyCleared", "History cleared") } }
     }
     throw new Error("Unknown action " + action)
   }
@@ -278,23 +300,23 @@ Item {
       case "copy":
         uprank()
         clipboard.copy(c.symbol)
-        return { close: true, hud: "Copied to Clipboard" }
+        return { close: true, hud: backend.t("toast.copiedToClipboard", "Copied to Clipboard") }
       case "copy-name":
         clipboard.copy(c.title)
-        return { close: true, hud: "Copied to Clipboard" }
+        return { close: true, hud: backend.t("toast.copiedToClipboard", "Copied to Clipboard") }
       case "pin":
       case "unpin":
         backend.setPinned(e.symbol, action === "pin")
-        return { toast: { style: "success", title: action === "pin" ? "Pinned" : "Unpinned" } }
+        return { toast: { style: "success", title: action === "pin" ? backend.t("toast.pinned", "Pinned") : backend.t("toast.unpinned", "Unpinned") } }
       case "remove-recent":
         emojiStore.update(function(doc) { delete doc.items[e.symbol] })
-        return { toast: { style: "success", title: "Removed from Recently Used" } }
+        return { toast: { style: "success", title: backend.t("toast.removedRecent", "Removed from Recently Used") } }
       case "tone:none": case "tone:light": case "tone:medium-light": case "tone:medium": case "tone:medium-dark": case "tone:dark":
         backend.callSync("emojiPicker.setSkinTone", { tone: action.slice(5) })
-        return { toast: { style: "success", title: "Skin tone set" } }
+        return { toast: { style: "success", title: backend.t("toast.skinToneSet", "Skin tone set") } }
       case "clear-recent":
         emojiStore.update(function(doc) { doc.items = {} })
-        return { toast: { style: "success", title: "Recently Used cleared" } }
+        return { toast: { style: "success", title: backend.t("toast.recentCleared", "Recently Used cleared") } }
     }
     throw new Error("Unknown action " + action)
   }
@@ -324,6 +346,20 @@ Item {
     return null
   }
 
+  function clipboardInfo(entry) {
+    var d = ClipboardHistory.detail(entry)
+    var locale = Qt.locale(Commons.I18n.formatLocale)
+    var info = Localize.infoRows(d.info, backend.t, backend.tn).map(function(row, idx) {
+      var rawLabel = d.info[idx] && d.info[idx].label
+      if (rawLabel === "Last copied" && entry.updatedAt)
+        return { label: row.label, value: new Date(entry.updatedAt).toLocaleString(locale, Locale.ShortFormat) }
+      if (rawLabel === "First copied" && entry.createdAt)
+        return { label: row.label, value: new Date(entry.createdAt).toLocaleString(locale, Locale.ShortFormat) }
+      return row
+    })
+    return Object.assign({}, d, { info: info })
+  }
+
   // Only files inside our clipboard directory, whatever the store says.
   function deleteClipboardFiles(paths) {
     var dir = backend.paths.clipboard + "/"
@@ -334,7 +370,7 @@ Item {
   // Applies mutate(entries) → entries, then retention, and deletes the files
   // no entry uses any more.
   function updateClipboard(mutate) {
-    if (!clipboardStore.loaded) throw new Error("Clipboard History is not loaded")
+    if (!clipboardStore.loaded) throw new Error(backend.t("error.clipboardNotLoaded", "Clipboard History is not loaded"))
     var orphans = []
     clipboardStore.update(function(doc) {
       var before = doc.entries
@@ -384,12 +420,17 @@ Item {
 
   function clipboardAction(action, id, confirmed) {
     if (action === "delete-all-entries") {
-      if (!confirmed) return { confirm: { title: "Delete All Entries", message: "This removes every unpinned entry from Clipboard History. Pinned entries are kept.", primary: "Delete All", destructive: true } }
+      if (!confirmed) return { confirm: {
+        title: backend.t("confirm.deleteClip.title", "Delete All Entries"),
+        message: backend.t("confirm.deleteClip.message", "This removes every unpinned entry from Clipboard History. Pinned entries are kept."),
+        primary: backend.t("confirm.deleteClip.primary", "Delete All"),
+        destructive: true
+      } }
       backend.updateClipboard(function(entries) { return entries.filter(function(e) { return typeof e.pinned === "number" }) })
-      return { toast: { style: "success", title: "History cleared" } }
+      return { toast: { style: "success", title: backend.t("toast.historyCleared", "History cleared") } }
     }
     var e = backend.clipboardEntry(id)
-    if (!e) throw new Error("No such clipboard entry")
+    if (!e) throw new Error(backend.t("error.noSuchClipboard", "No such clipboard entry"))
     switch (action) {
       case "open":
       case "paste":
@@ -397,7 +438,7 @@ Item {
         return { close: true }
       case "copy":
         backend.writeClipboardEntry(e, false)
-        return { close: true, hud: "Copied to Clipboard" }
+        return { close: true, hud: backend.t("toast.copiedToClipboard", "Copied to Clipboard") }
       case "open-link":
         var files = ClipboardHistory.filePaths(e.text)
         var target = files.length ? files[0] : String(e.text || "").trim()
@@ -407,12 +448,12 @@ Item {
       case "pin":
       case "unpin":
         backend.updateClipboard(function(entries) { return ClipboardHistory.setPinned(entries, e.id, action === "pin") })
-        return { toast: { style: "success", title: action === "pin" ? "Pinned" : "Unpinned" } }
+        return { toast: { style: "success", title: action === "pin" ? backend.t("toast.pinned", "Pinned") : backend.t("toast.unpinned", "Unpinned") } }
       case "delete-entry":
         backend.updateClipboard(function(entries) { return entries.filter(function(x) { return x.id !== e.id }) })
-        return { toast: { style: "success", title: "Entry deleted" } }
+        return { toast: { style: "success", title: backend.t("toast.entryDeleted", "Entry deleted") } }
     }
-    throw new Error("Unknown action " + action)
+    throw new Error(backend.t("error.unknownAction", "Unknown action %1", [action]))
   }
 
   // ----------------------------------------------------------------- themes
@@ -481,7 +522,7 @@ Item {
     var action = String(data && data.action || "open")
     var query = String(data && data.query || "").trim()
     var candidate = backend.decorated(id)
-    if (!candidate) throw new Error("Unknown command " + id)
+    if (!candidate) throw new Error(backend.t("error.unknownCommand", "Unknown command %1", [id]))
 
     if (action === "open") {
       switch (candidate.kind) {
@@ -490,7 +531,7 @@ Item {
           appFocuser.open(candidate)
           return { close: true }
         case "omarchy-action":
-          if (candidate.disabled) return { toast: { style: "failure", title: candidate.title + " is already set up" } }
+          if (candidate.disabled) return { toast: { style: "failure", title: backend.t("toast.alreadySetUp", "%1 is already set up", [candidate.title]) } }
           backend.recordVisit(id, query)
           backend.runShell(candidate.action)
           return { close: true }
@@ -500,13 +541,13 @@ Item {
         case "omarchy-link":
           backend.recordVisit(id, query)
           var target = menuSource.tree.items[candidate.target]
-          if (!target) return { toast: { style: "failure", title: "Menu " + candidate.target + " not found" } }
+          if (!target) return { toast: { style: "failure", title: backend.t("toast.menuNotFound", "Menu %1 not found", [candidate.target]) } }
           return backend.openMenu(target)
         case "builtin":
           if (candidate.run.url) {
             var values = (data && data.arguments) || {}
             var missing = RootSearch.missingArgument(candidate.arguments, values)
-            if (missing >= 0) throw new Error("Type a " + candidate.arguments[missing].placeholder.toLowerCase() + " first")
+            if (missing >= 0) throw new Error(backend.t("error.typeArgumentFirst", "Type a %1 first", [candidate.arguments[missing].placeholder.toLowerCase()]))
             backend.recordVisit(id, query)
             Util.execArgv(["omarchy-launch-browser", RootSearch.fillArguments(candidate.run.url, values)])
             return { close: true }
@@ -522,16 +563,24 @@ Item {
         case "script":
           var script = candidate.script
           var args = ScriptCommands.argv(script, (data && data.arguments) || {})
-          if (args.error) throw new Error(args.error)
+          if (args.error) {
+            var badArg = typeof args.index === "number" ? script.arguments[args.index] : null
+            var argVal = badArg ? String(((data && data.arguments) || {})[badArg.name] || "").trim() : ""
+            if (badArg && badArg.required && !argVal)
+              throw new Error(backend.t("error.typeArgumentFirst", "Type a %1 first", [badArg.placeholder.toLowerCase()]))
+            if (badArg && argVal && badArg.type === "dropdown")
+              throw new Error(backend.t("error.invalidOption", "%1 is not a %2 option", [argVal, badArg.placeholder.toLowerCase()]))
+            throw new Error(args.error)
+          }
           if (script.needsConfirmation && !(data && data.confirmed))
-            return { confirm: { title: script.title, message: "Are you sure you want to run this script?", primary: "Run", destructive: false } }
+            return { confirm: { title: script.title, message: backend.t("confirm.script.message", "Are you sure you want to run this script?"), primary: backend.t("confirm.script.primary", "Run"), destructive: false } }
           backend.recordVisit(id, query)
           scriptRunner.run(script, args.argv)
           // silent closes and shows a HUD. shortcut: fullOutput and inline
           // run as compact (toast with the last line); add the output view
           // and inline refresh when a script needs them.
           if (script.mode === "silent") return { close: true }
-          return { toast: { style: "success", title: "Running " + script.title + "…" } }
+          return { toast: { style: "success", title: backend.t("toast.runningScript", "Running %1…", [script.title]) } }
       }
       throw new Error("Cannot open " + id)
     }
@@ -547,7 +596,7 @@ Item {
       case "copy-command":
       case "copy-id":
         clipboard.copy(action === "copy-id" ? candidate.appId + ".desktop" : candidate.action)
-        return { close: true, hud: "Copied to Clipboard" }
+        return { close: true, hud: backend.t("toast.copiedToClipboard", "Copied to Clipboard") }
       case "favorite-add":
       case "favorite-remove":
       case "favorite-up":
@@ -562,21 +611,26 @@ Item {
             else doc.commands[key] = entry
           }
         })
-        var titles = { "favorite-add": "Added to Favorites", "favorite-remove": "Removed from Favorites", "favorite-up": "Moved Up", "favorite-down": "Moved Down" }
+        var titles = {
+          "favorite-add": backend.t("toast.favoriteAdd", "Added to Favorites"),
+          "favorite-remove": backend.t("toast.favoriteRemove", "Removed from Favorites"),
+          "favorite-up": backend.t("toast.favoriteUp", "Moved Up"),
+          "favorite-down": backend.t("toast.favoriteDown", "Moved Down")
+        }
         return { toast: { style: "success", title: titles[action] } }
       case "set-alias":
-        return { push: { kind: "alias", commandId: id, title: "Alias for " + candidate.title, value: candidate.alias } }
+        return { push: { kind: "alias", commandId: id, title: backend.t("toast.aliasFor", "Alias for %1", [candidate.title]), value: candidate.alias } }
       case "remove-alias":
         backend.updateCommand(id, function(s) { delete s.alias; return s })
-        return { toast: { style: "success", title: "Alias removed" } }
+        return { toast: { style: "success", title: backend.t("toast.aliasRemoved", "Alias removed") } }
       case "reset-ranking":
         frecencyStore.update(function(doc) { delete doc.items[id] })
-        return { toast: { style: "success", title: "Ranking reset" } }
+        return { toast: { style: "success", title: backend.t("toast.rankingReset", "Ranking reset") } }
       case "disable":
         backend.updateCommand(id, function(s) { s.enabled = false; return s })
         // Undo on Ctrl+T: there is no settings window to re-enable it yet.
-        return { toast: { style: "success", title: candidate.title + " disabled", actions: [
-          { id: "undo", title: "Undo", done: candidate.title + " enabled",
+        return { toast: { style: "success", title: backend.t("toast.commandDisabled", "%1 disabled", [candidate.title]), actions: [
+          { id: "undo", title: backend.t("toast.undo", "Undo"), done: backend.t("toast.commandEnabled", "%1 enabled", [candidate.title]),
             call: { method: "settings.updateCommandSettings", data: { commandId: id, enabled: true } } }
         ] } }
     }
@@ -639,10 +693,10 @@ Item {
         if (!backend.candidatesById[id]) throw new Error("Unknown command " + id)
         if (data.alias !== undefined && data.alias !== null) {
           var alias = String(data.alias).trim().toLowerCase()
-          if (/\s/.test(alias)) throw new Error("An alias cannot contain spaces")
+          if (/\s/.test(alias)) throw new Error(backend.t("error.aliasSpaces", "An alias cannot contain spaces"))
           var commands = settingsStore.doc.commands
           for (var other in commands) {
-            if (other !== id && commands[other].alias === alias && alias) throw new Error("Alias “" + alias + "” is already used by " + ((backend.candidatesById[other] || {}).title || other))
+            if (other !== id && commands[other].alias === alias && alias) throw new Error(backend.t("error.aliasUsed", "Alias “%1” is already used by %2", [alias, (backend.candidatesById[other] || {}).title || other]))
           }
         }
         backend.updateCommand(id, function(s) {
@@ -658,6 +712,7 @@ Item {
       search: function(data) {
         var query = String(data && data.query || "")
         var view = data && data.view
+        var viewKind = view && view.kind ? String(view.kind) : "root"
         var ctx = backend.searchContext()
         if (data && data.fleaHits) ctx.fleaHits = data.fleaHits
         var sections
@@ -672,66 +727,71 @@ Item {
           if (query.trim() && ctx.filter === "all") ctx.calculation = backend.calculate(query)
           sections = RootSearch.rootSections(backend.candidates, query, ctx, backend.deps)
         }
-        if (view && view.kind === "emoji") return sections
+        if (view && view.kind === "emoji") return sections.map(function(s) { return Localize.section(s, viewKind, backend.t, backend.tn, strings.language) })
         return sections.map(function(s) {
-          return { id: s.id, title: s.title, rows: s.rows.map(function(r) { return r.candidate }) }
+          return Localize.section({ id: s.id, title: s.title, rows: s.rows.map(function(r) { return r.candidate }) }, viewKind, backend.t, backend.tn, strings.language)
         })
       },
       getActions: function(data) {
         var rowId = String(data && data.id || "")
-        if (rowId === RootSearch.CALCULATOR_ID) return RootSearch.actionsFor({ kind: "calculator" })
-        if (rowId.indexOf("calculator-history:") === 0) return RootSearch.actionsFor({ kind: "calculator-history" })
-        if (rowId.indexOf("theme:") === 0) {
+        var actions
+        if (rowId === RootSearch.CALCULATOR_ID) actions = RootSearch.actionsFor({ kind: "calculator" })
+        else if (rowId.indexOf("calculator-history:") === 0) actions = RootSearch.actionsFor({ kind: "calculator-history" })
+        else if (rowId.indexOf("theme:") === 0) {
           var shown = backend.themeEntry(rowId)
           if (!shown) throw new Error("No such theme")
-          return Themes.actionsFor(shown, themeSource.current)
-        }
-        if (rowId.indexOf("clipboard:") === 0) {
+          actions = Themes.actionsFor(shown, themeSource.current)
+        } else if (rowId.indexOf("clipboard:") === 0) {
           var clip = backend.clipboardEntry(rowId)
           if (!clip) throw new Error("No such clipboard entry")
           var app = backend.activeApp()
-          return ClipboardHistory.actionsFor(clip, app ? app.name : "")
+          actions = ClipboardHistory.actionsFor(clip, app ? app.name : "")
+        } else if (rowId.indexOf("emoji:") === 0) {
+          actions = Emoji.actionsFor(backend.emojiCandidate(rowId).candidate, backend.emojiState().tone)
+        } else {
+          var candidate = backend.decorated(rowId)
+          if (!candidate) {
+            var fallback = RootSearch.FALLBACKS.filter(function(f) { return f.id === data.id })[0]
+            if (!fallback) throw new Error(backend.t("error.unknownCommand", "Unknown command %1", [data && data.id]))
+            actions = RootSearch.actionsFor({ kind: "fallback", title: fallback.title })
+          } else {
+            actions = RootSearch.actionsFor(candidate)
+          }
         }
-        if (rowId.indexOf("emoji:") === 0) return Emoji.actionsFor(backend.emojiCandidate(rowId).candidate, backend.emojiState().tone)
-        var candidate = backend.decorated(rowId)
-        if (!candidate) {
-          var fallback = RootSearch.FALLBACKS.filter(function(f) { return f.id === data.id })[0]
-          if (!fallback) throw new Error("Unknown command " + (data && data.id))
-          return RootSearch.actionsFor({ kind: "fallback", title: fallback.title })
-        }
-        return RootSearch.actionsFor(candidate)
+        return actions.map(function(a) { return Localize.action(a, backend.t) })
       },
       getItemInfo: function(data) {
         var rowId = String(data && data.id || "")
         var nowMs = Date.now()
+        var info
         if (rowId === RootSearch.CALCULATOR_ID) {
           var calc = backend.calculate(String(data.query || ""))
-          return calc ? RootSearch.aboutFor(RootSearch.calculatorCandidate(calc), nowMs) : []
-        }
-        if (rowId.indexOf("calculator-history:") === 0) {
+          info = calc ? RootSearch.aboutFor(RootSearch.calculatorCandidate(calc), nowMs) : []
+        } else if (rowId.indexOf("calculator-history:") === 0) {
           var entry = backend.historyEntry(rowId)
-          return entry ? RootSearch.aboutFor(RootSearch.historyCandidate(entry, nowMs), nowMs) : []
-        }
-        if (rowId.indexOf("clipboard:") === 0) {
+          info = entry ? RootSearch.aboutFor(RootSearch.historyCandidate(entry, nowMs), nowMs) : []
+        } else if (rowId.indexOf("clipboard:") === 0) {
           var clip = backend.clipboardEntry(rowId)
-          return clip ? ClipboardHistory.detail(clip).info : []
-        }
-        if (rowId.indexOf("emoji:") === 0) {
+          return clip ? backend.clipboardInfo(clip).info : []
+        } else if (rowId.indexOf("emoji:") === 0) {
           var found = backend.emojiCandidate(rowId)
-          return Emoji.aboutFor(found.candidate, found.entry)
+          info = Emoji.aboutFor(found.candidate, found.entry)
+        } else {
+          var candidate = backend.decorated(rowId)
+          if (!candidate) {
+            var f = RootSearch.FALLBACKS.filter(function(x) { return x.id === rowId })[0]
+            if (!f) throw new Error(backend.t("error.unknownCommand", "Unknown command %1", [rowId]))
+            info = RootSearch.aboutFor({ id: f.id, kind: "fallback", title: f.title, typeLabel: "Fallback", url: f.url }, nowMs)
+          } else {
+            info = RootSearch.aboutFor(candidate, nowMs)
+          }
         }
-        var candidate = backend.decorated(rowId)
-        if (!candidate) {
-          var f = RootSearch.FALLBACKS.filter(function(x) { return x.id === rowId })[0]
-          if (!f) throw new Error("Unknown command " + rowId)
-          return RootSearch.aboutFor({ id: f.id, kind: "fallback", title: f.title, typeLabel: "Fallback", url: f.url }, nowMs)
-        }
-        return RootSearch.aboutFor(candidate, nowMs)
+        return Localize.infoRows(info, backend.t, backend.tn)
       },
       performAction: function(data) {
         if (data && String(data.id).indexOf("theme:") === 0) {
           var theme = backend.themeEntry(data.id)
-          if (!theme) throw new Error("No such theme")
+          if (!theme) throw new Error(backend.t("error.noSuchTheme", "No such theme"))
           themeSource.apply(theme.slug)
           return { close: true }
         }
@@ -740,7 +800,7 @@ Item {
         // Destructive commands come back as a confirmation unless confirmed.
         if (!(data && data.confirmed)) {
           var confirm = RootSearch.confirmationFor(String(data && data.id || ""), String(data && data.action || "open"))
-          if (confirm) return { confirm: confirm }
+          if (confirm) return { confirm: Localize.confirmation(confirm, backend.t) }
         }
         var fallback = RootSearch.FALLBACKS.filter(function(f) { return f.id === (data && data.id) })[0]
         if (fallback) {
@@ -750,17 +810,17 @@ Item {
         // The calculator row is the query itself, evaluated again.
         if (data && data.id === RootSearch.CALCULATOR_ID) {
           var calc = backend.calculate(String(data.query || ""))
-          if (!calc) throw new Error("Nothing to calculate")
+          if (!calc) throw new Error(backend.t("error.nothingToCalculate", "Nothing to calculate"))
           return backend.calculatorAction(String(data.action || "open"), { query: calc.input, result: calc.result, copy: calc.copy, kind: calc.kind }, "")
         }
         if (data && String(data.id).indexOf("calculator-history:") === 0) {
           var entry = backend.historyEntry(data.id)
-          if (!entry) throw new Error("No such history entry")
+          if (!entry) throw new Error(backend.t("error.noSuchHistory", "No such history entry"))
           return backend.calculatorAction(String(data.action || "open"), entry, entry.id)
         }
         if (data && String(data.id).indexOf("emoji:") === 0) {
           var confirmClear = String(data.action) === "clear-recent" && !data.confirmed
-          if (confirmClear) return { confirm: { title: "Clear Recently Used", message: "This forgets every emoji you have pasted or copied.", primary: "Clear", destructive: true } }
+          if (confirmClear) return { confirm: Localize.confirmation({ title: "Clear Recently Used", message: "This forgets every emoji you have pasted or copied.", primary: "Clear", destructive: true }, backend.t) }
           return backend.emojiAction(String(data.action || "open"), data.id, String(data.query || ""))
         }
         return backend.performAction(data)
@@ -775,7 +835,7 @@ Item {
       historyDelete: function(data) { return backend.calculatorAction("delete-entry", null, String(data && data.id || "")) },
       historyDeleteAll: function() { return backend.calculatorAction("delete-all-entries", null, "") },
       refreshCurrencies: function() {
-        if (!backend.config.currencyRates) throw new Error("currencyRates is off in config.json")
+        if (!backend.config.currencyRates) throw new Error(backend.t("error.currencyRatesOff", "currencyRates is off in config.json"))
         calculatorData.fetchRates()
         return null
       },
@@ -817,7 +877,7 @@ Item {
       getAll: function() { return backend.clipboardEntries() },
       getDetail: function(data) {
         var e = backend.clipboardEntry(String(data && data.id || ""))
-        return e ? ClipboardHistory.detail(e) : null
+        return e ? backend.clipboardInfo(e) : null
       },
       copy: function(data) { return backend.clipboardAction("copy", String(data && data.id || ""), true) },
       paste: function(data) { return backend.clipboardAction("paste", String(data && data.id || ""), true) },
@@ -831,7 +891,9 @@ Item {
       getAll: function() { return { current: themeSource.current, themes: themeSource.themes } },
       getDetail: function(data) {
         var t = backend.themeEntry(String(data && data.id || ""))
-        return t ? Themes.detail(t, themeSource.current) : null
+        if (!t) return null
+        var d = Themes.detail(t, themeSource.current)
+        return Object.assign({}, d, { info: Localize.infoRows(d.info, backend.t, backend.tn) })
       }
     })
 
@@ -904,7 +966,17 @@ Item {
   // Launcher.qml shows the result as a toast while the window is open, else a HUD.
   ScriptRunner {
     id: scriptRunner
-    onFinished: function(command, result) { backend.emit("scriptCommands.finished", { mode: command.mode, style: result.style, title: result.title }) }
+    onFinished: function(command, result) {
+      var title = result.title
+      if (title === command.title + " finished") {
+        title = backend.t("toast.scriptFinished", "%1 finished", [command.title])
+      } else {
+        var m = title.match(/^[\s\S]+ failed \(exit (\d+)\)$/)
+        if (m && title === command.title + " failed (exit " + m[1] + ")")
+          title = backend.t("toast.scriptFailed", "%1 failed (exit %2)", [command.title, m[1]])
+      }
+      backend.emit("scriptCommands.finished", { mode: command.mode, style: result.style, title: title })
+    }
   }
 
   AppFocuser {
@@ -915,8 +987,7 @@ Item {
 
   Process {
     id: mkdirs
-    // Moves directories left under the old name, then creates everything
-    // owner-only and repairs modes left readable by older builds.
+    // Creates directories owner-only and repairs modes left readable by older builds.
     command: Paths.setupArgv(backend.paths, [Schema.documents.settings.file, Schema.documents.frecency.file, Schema.documents.calculator.file, Schema.documents.emoji.file, Schema.documents.clipboard.file]
       .map(function(file) { return backend.paths.db + "/" + file }))
     onExited: function(exitCode) {
@@ -927,6 +998,7 @@ Item {
 
   OmarchyMenuSource {
     id: menuSource
+    language: strings.language
     onRevisionChanged: rebuildTimer.restart()
     onMessage: function(level, text, metadata) { backend.log(level, "omarchy-menu", text, metadata) }
   }

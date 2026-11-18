@@ -11,6 +11,7 @@ import "../core/Rows.js" as Rows
 import "../core/Emoji.js" as Emoji
 import "../core/ClipboardHistory.js" as ClipboardHistory
 import "../core/ScriptCommands.js" as ScriptCommands
+import "../core/Localize.js" as Localize
 
 // Omarchy 4.0.x dropped qs.Ui.OverlayWindow; this is the same full-screen
 // overlay layer the shell's own emoji picker uses.
@@ -84,8 +85,13 @@ PanelWindow {
     foreground: Commons.Color.menu.text,
     accent: Commons.Color.menu.selectedText,
     selectedBackground: Commons.Color.menu.selectedBackground,
+    scrim: Commons.Color.menu.scrim,
     fontFamily: Style.font.menuFamily
   })
+  function t(key, fallback, args) {
+    window.backend.languageRevision
+    return window.backend && window.backend.t ? window.backend.t(key, fallback, args) : Localize.format(fallback, args)
+  }
   readonly property var borderSpec: Border.surfaceSpec("menu", "border", Commons.Color.menu.border, Math.max(1, Style.space(2)))
 
   // Omarchy's Glassy windows (`omarchy hyprland window transparency glassy`):
@@ -131,7 +137,7 @@ PanelWindow {
   readonly property bool splitView: window.clipboardView || window.view.kind === "theme"
   // The dropdown: Clipboard History's types, or the root's (config rootFilter).
   readonly property bool hasFilter: window.clipboardView || (window.atRoot && window.backend.config.rootFilter)
-  readonly property var filterOptions: window.clipboardView ? ClipboardHistory.FILTERS : RootSearch.FILTERS
+  readonly property var filterOptions: Localize.filterOptions(window.clipboardView ? ClipboardHistory.FILTERS : RootSearch.FILTERS, window.view.kind, window.t)
   readonly property string activeFilter: window.clipboardView ? window.clipboardFilter : window.atRoot ? window.rootFilter : "all"
   property bool dropdownOpen: false
   property bool toastPanelOpen: false
@@ -155,13 +161,13 @@ PanelWindow {
 
   readonly property bool atRoot: window.stack.length === 1
   readonly property bool compact: window.general.windowMode === "compact" && window.atRoot && !window.query
-  readonly property string placeholder: window.view.kind === "alias" ? "Type an alias, then press ↵"
-    : window.view.kind === "menu" ? "Search " + window.view.title + "…"
-    : window.view.kind === "calculator-history" ? "Search calculations…"
-    : window.clipboardView ? "Type to filter entries…"
-    : window.view.kind === "theme" ? "Search themes…"
-    : window.grid ? "Search Emoji & Symbols…"
-    : "Search for apps and commands…"
+  readonly property string placeholder: window.view.kind === "alias" ? window.t("placeholder.alias", "Type an alias, then press ↵")
+    : window.view.kind === "menu" ? window.t("placeholder.menu", "Search %1…", [window.view.title])
+    : window.view.kind === "calculator-history" ? window.t("placeholder.calculatorHistory", "Search calculations…")
+    : window.clipboardView ? window.t("placeholder.clipboard", "Type to filter entries…")
+    : window.view.kind === "theme" ? window.t("placeholder.theme", "Search themes…")
+    : window.grid ? window.t("placeholder.emoji", "Search Emoji & Symbols…")
+    : window.t("placeholder.root", "Search for apps and commands…")
 
   readonly property int cardWidth: Math.min(px(750), width - Style.gapsOut * 2)
   readonly property int fullHeight: Math.min(px(475), height - Style.gapsOut * 2)
@@ -173,6 +179,7 @@ PanelWindow {
   property int clipboardRevision: 0
   readonly property var clipboardDetail: {
     window.clipboardRevision
+    window.backend.languageRevision
     if (!window.splitView || !window.selectedRow) return null
     var r = window.backend.callSync(window.clipboardView ? "clipboard.getDetail" : "themes.getDetail", { id: window.selectedRow.itemId })
     return r.ok ? r.data : null
@@ -307,7 +314,7 @@ PanelWindow {
   property string builtRootKey: ""
   function rootKey() {
     return window.atRoot && window.query === "" && window.rootFilter === "all"
-      ? window.backend.candidatesRevision + ":" + window.backend.storeRevision : ""
+      ? window.backend.candidatesRevision + ":" + window.backend.storeRevision + ":" + window.backend.languageRevision : ""
   }
 
   function rebuild(resetSelection, restoreIndex) {
@@ -581,7 +588,7 @@ PanelWindow {
     if (!action) return
     if (action.copy !== undefined) {
       window.backend.copyText(action.copy)
-      window.showToast("success", "Copied to Clipboard")
+      window.showToast("success", window.t("toast.copiedToClipboard", "Copied to Clipboard"))
       return
     }
     var r = window.backend.callSync(action.call.method, action.call.data)
@@ -626,7 +633,7 @@ PanelWindow {
     if (!r.ok) { window.showToast("failure", r.error); return }
     var saved = window.query.trim()
     window.pop()
-    window.showToast("success", saved ? "Alias saved" : "Alias removed")
+    window.showToast("success", saved ? window.t("toast.aliasSaved", "Alias saved") : window.t("toast.aliasRemoved", "Alias removed"))
     window.rebuild(false)
   }
 
@@ -634,7 +641,7 @@ PanelWindow {
   // A failure toast always offers its message to copy (Ctrl+T).
   function showToast(style, title, actions) {
     var list = (actions || []).slice()
-    if (style === "failure") list.push({ id: "copy-error", title: "Copy Error Message", copy: String(title || "") })
+    if (style === "failure") list.push({ id: "copy-error", title: window.t("toast.copyError", "Copy Error Message"), copy: String(title || "") })
     window.toastPanelOpen = false
     window.toast = { style: style, title: String(title || ""), actions: list }
     toastTimer.interval = list.length ? 6000 : 2500
@@ -858,9 +865,35 @@ PanelWindow {
       && (event.modifiers === Qt.NoModifier || event.modifiers === Qt.ShiftModifier)
   }
 
+  function refreshStackTitles() {
+    var titles = {
+      clipboard: window.t("builtin.clipboard.title", "Clipboard History"),
+      theme: window.t("builtin.theme.title", "Switch Theme"),
+      emoji: window.t("builtin.emoji.title", "Search Emoji & Symbols"),
+      "calculator-history": window.t("builtin.calculatorHistory.title", "Calculator History")
+    }
+    var changed = false
+    var next = window.stack.map(function(v) {
+      var title = titles[v.kind]
+      if (!title && v.kind === "menu" && window.backend.candidatesById["omarchy:" + v.menuId])
+        title = window.backend.candidatesById["omarchy:" + v.menuId].title
+      if (!title && v.kind === "alias" && window.backend.candidatesById[v.commandId])
+        title = window.t("toast.aliasFor", "Alias for %1", [window.backend.candidatesById[v.commandId].title])
+      if (title && v.title !== title) {
+        changed = true
+        return Object.assign({}, v, { title: title })
+      }
+      return v
+    })
+    if (changed) window.stack = next
+  }
+
   Connections {
     target: window.backend
-    function onCandidatesRevisionChanged() { if (window.shown && !window.actionPanelOpen && !window.alert) window.rebuild(false) }
+    function onCandidatesRevisionChanged() {
+      window.refreshStackTitles()
+      if (window.shown && !window.actionPanelOpen && !window.alert) window.rebuild(false)
+    }
     // Exchange rates or zone offsets arrived: re-evaluate a calculation on screen.
     function onCalculatorRevisionChanged() { if (window.shown && !window.actionPanelOpen && window.query) window.rebuild(false) }
     // A copy, pin or delete: refresh an open Clipboard History.
@@ -871,6 +904,12 @@ PanelWindow {
     }
   }
 
+
+  Rectangle {
+    id: scrim
+    anchors.fill: parent
+    color: window.look.scrim
+  }
 
   MouseArea {
     anchors.fill: parent
@@ -1019,7 +1058,7 @@ PanelWindow {
               readonly property string shownValue: dropdown ? ScriptCommands.optionTitle(pill.modelData, pill.value)
                 : pill.modelData.type === "password" ? "•".repeat(pill.value.length) : pill.value
               text: (dropdown && pill.focused ? "‹ " : "")
-                + (shownValue || (pill.modelData.placeholder + (pill.modelData.required ? "" : " (optional)")))
+                + (shownValue || (pill.modelData.placeholder + (pill.modelData.required ? "" : window.t("placeholder.optionalSuffix", " (optional)"))))
                 + (dropdown && pill.focused ? " ›" : "")
               opacity: pill.value ? 1 : 0.5
               color: window.look.foreground
@@ -1157,6 +1196,7 @@ PanelWindow {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         detail: window.clipboardDetail
+        infoTitle: window.t("detail.information", "Information")
         look: window.look
         zoom: window.zoom
       }
@@ -1184,9 +1224,9 @@ PanelWindow {
           anchors.horizontalCenter: parent.horizontalCenter
           textFormat: Text.PlainText
           text: window.view.kind === "alias" ? window.view.title
-            : window.view.kind === "calculator-history" && !window.query ? "No Calculations Yet"
-            : window.clipboardView && !window.query && window.clipboardFilter === "all" ? "No Clipboard Entries"
-            : (window.backend.ready ? "No results" : "Loading…")
+            : window.view.kind === "calculator-history" && !window.query ? window.t("empty.noCalculations", "No Calculations Yet")
+            : window.clipboardView && !window.query && window.clipboardFilter === "all" ? window.t("empty.noClipboard", "No Clipboard Entries")
+            : (window.backend.ready ? window.t("empty.noResults", "No results") : window.t("status.loading", "Loading…"))
           color: window.look.foreground
           font.family: window.look.fontFamily
           font.pixelSize: Math.round(Style.font.title * window.zoom)
@@ -1194,10 +1234,10 @@ PanelWindow {
         Text {
           anchors.horizontalCenter: parent.horizontalCenter
           textFormat: Text.PlainText
-          text: window.view.kind === "alias" ? "Typing the alias exactly in the root search puts this command on top. Leave it empty to remove it."
-            : window.view.kind === "calculator-history" && !window.query ? "Type a calculation in the root search, then copy or paste the answer."
+          text: window.view.kind === "alias" ? window.t("empty.aliasHint", "Typing the alias exactly in the root search puts this command on top. Leave it empty to remove it.")
+            : window.view.kind === "calculator-history" && !window.query ? window.t("empty.calculatorHint", "Type a calculation in the root search, then copy or paste the answer.")
             : window.clipboardView && !window.query && window.clipboardFilter === "all"
-              ? (window.backend.config.clipboardHistory ? "Copy something and it shows up here." : "Recording is off: clipboardHistory is false in config.json.") : ""
+              ? (window.backend.config.clipboardHistory ? window.t("empty.clipboardHint", "Copy something and it shows up here.") : window.t("empty.clipboardDisabledHint", "Recording is off: clipboardHistory is false in config.json.")) : ""
           visible: text.length > 0
           color: window.look.foreground
           opacity: 0.55
@@ -1251,7 +1291,7 @@ PanelWindow {
           id: footerStatus
           anchors.verticalCenter: parent.verticalCenter
           textFormat: Text.PlainText
-          text: window.toast ? window.toast.title : window.loadingVisible ? "Loading…"
+          text: window.toast ? window.toast.title : window.loadingVisible ? (window.t ? window.t("status.loading", "Loading…") : "Loading…")
             : window.grid && window.selectedRow ? window.selectedRow.title : window.view.title
           color: window.look.foreground
           opacity: window.toast ? 0.9 : 0.6
@@ -1279,7 +1319,8 @@ PanelWindow {
         readonly property var current: {
           window.selectedRow
           window.backend.storeRevision
-          if (window.view.kind === "alias") return { title: "Save Alias", shortcut: "↵" }
+          window.backend.languageRevision
+          if (window.view.kind === "alias") return { title: window.t("footer.saveAlias", "Save Alias"), shortcut: "↵" }
           var list = window.actionsForSelected()
           return list.length ? list[0] : null
         }
@@ -1316,7 +1357,7 @@ PanelWindow {
           visible: window.view.kind !== "alias"
           anchors.verticalCenter: parent.verticalCenter
           textFormat: Text.PlainText
-          text: "Actions"
+          text: window.t("footer.actions", "Actions")
           color: window.look.foreground
           opacity: 0.7
           font.family: window.look.fontFamily
@@ -1341,6 +1382,7 @@ PanelWindow {
       anchors.bottom: footer.top
       anchors.bottomMargin: window.px(6)
       sourceComponent: ActionPanel {
+        placeholder: window.t("placeholder.actions", "Search for actions…")
         actions: window.actions
         look: window.look
         zoom: window.zoom
@@ -1358,7 +1400,7 @@ PanelWindow {
       anchors.top: header.bottom
       anchors.topMargin: window.px(4)
       sourceComponent: ActionPanel {
-        placeholder: "Filter…"
+        placeholder: window.t("placeholder.filter", "Filter…")
         actions: window.filterOptions.map(function(f) {
           return { id: f.id, title: f.title, shortcut: "", section: "filter", icon: f.id === window.activeFilter ? "✓" : " " }
         })
@@ -1378,7 +1420,7 @@ PanelWindow {
       anchors.bottom: footer.top
       anchors.bottomMargin: window.px(6)
       sourceComponent: ActionPanel {
-        placeholder: "Search toast actions…"
+        placeholder: window.t("placeholder.toastActions", "Search toast actions…")
         actions: (window.toast ? window.toast.actions : []).map(function(a) {
           return { id: a.id, title: a.title, shortcut: "", section: "toast", icon: " " }
         })
@@ -1409,6 +1451,8 @@ PanelWindow {
       anchors.fill: parent
       sourceComponent: Alert {
         spec: window.alert ? window.alert.spec : null
+        cancelText: window.t("alert.cancel", "Cancel")
+        okText: window.t("alert.ok", "OK")
         look: window.look
         zoom: window.zoom
         onConfirmed: window.confirmAlert()
